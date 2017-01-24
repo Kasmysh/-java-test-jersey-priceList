@@ -26,7 +26,7 @@
 
     <context-param>
         <param-name>db.url</param-name>
-        <param-value>jdbc:h2:tcp://localhost/~/test</param-value>
+        <param-value>jdbc:h2:tcp://localhost/~/test;MVCC=FALSE;LOCK_MODE=1</param-value>
     </context-param>
     <context-param>
         <param-name>db.user</param-name>

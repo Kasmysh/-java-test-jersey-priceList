@@ -52,7 +52,8 @@ public class DbStarter implements ServletContextListener {
 
             // servletContext.setAttribute("cheking", "it very WorkS!");
         } catch (Exception e) {
-            e.printStackTrace();
+           System.out.println( "Init db connection fail.  " + e.getMessage() );
+            // e.printStackTrace();
         }
     }
 

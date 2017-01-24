@@ -21,8 +21,8 @@ public class ProductPriceDAO {
     private final String productIdByProductNameTemplate;
 
     private Boolean isProductExist;
-    private BigDecimal price;
-    private List<ProductPrice> prices;
+    private BigDecimal price = null;
+    private List<ProductPrice> prices = null;
     private LocalDate _toDate;
     private LocalDate _fromDate;
 
@@ -36,7 +36,8 @@ public class ProductPriceDAO {
                 initPricesTable();
             }
         }catch (SQLException e){
-            e.printStackTrace();
+           System.out.println( "Getting of productsTable fail.  " + e.getMessage() );
+            // e.printStackTrace();
         }
     }
 
@@ -104,12 +105,62 @@ public class ProductPriceDAO {
         makeRequest(insertionRow+values);
     }
 
+    private Boolean switchAutocommit( Boolean autoCommitFlag ){
+        Boolean res = false;
+
+        try{
+            dbconn.setAutoCommit( autoCommitFlag );
+            res = true;
+        }catch(SQLException e){
+           System.out.println( "switchAutocommit is fail.  " + e.getMessage() );
+        }
+
+        return res;
+    }
+
+    private Boolean stopAutocommit(){
+        return switchAutocommit(false);
+    }
+
+    private Boolean startAutocommit(){
+        return switchAutocommit(true);
+    }
+
+    private Boolean commitTransaction(){
+        Boolean res = false;
+
+        try{
+            dbconn.commit();
+            res = true;
+        }catch(SQLException e){
+           System.out.println( "commitTransaction is fail.  " 
+                    + e.getMessage() );
+        }
+
+        return res;
+    }
+
+    private Boolean rollbackTransaction(){
+        Boolean res = false;
+
+        try{
+            dbconn.rollback();
+            res = true;
+        }catch(SQLException e){
+           System.out.println( "rollbackTransaction is fail.  " 
+                    + e.getMessage() );
+        }
+
+        return res;
+    }
+
     private Boolean makeRequest(String request){
-        Boolean reqStatus = null;
+        Boolean reqStatus = false;
         try (Statement dataQuery = dbconn.createStatement()) {
-            reqStatus = dataQuery.execute(request);
+            dataQuery.execute(request);
+            reqStatus = true;
         }catch (SQLException ex) {
-            System.out.println("Database connection failure: "
+            System.out.println("Simple makeRequest fail: "
                     + ex.getMessage());
         }
 
@@ -117,11 +168,12 @@ public class ProductPriceDAO {
     }
 
     private Boolean makeRequest(String request, RequestResultHandler handler){
-        Boolean reqStatus = null;
+        Boolean reqStatus = false;
         try (Statement dataQuery = dbconn.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE)) {
+            reqStatus = true;
             handler.handle( dataQuery.executeQuery(request) );
         }catch (SQLException ex) {
-            System.out.println("Database connection failure: "
+            System.out.println("MakeRequest with RequestResultHandler failure: "
                     + ex.getMessage());
         }
 
@@ -137,6 +189,9 @@ public class ProductPriceDAO {
                     isProductExist = queryResult.getBoolean(1);
                 }catch(SQLException e){
                     isProductExist = false;
+
+                    System.out.println("hasProduct request handler failure. Does product not exist?  "
+                            + e.getMessage());
                 }
             }
         };
@@ -162,6 +217,9 @@ public class ProductPriceDAO {
                     price = queryResult.getBigDecimal(1);
                 }catch(SQLException e){
                     price = null;
+
+                    System.out.println("getPrice request handler failure. Does price not exist?  "
+                            + e.getMessage());
                 }
             }
         };
@@ -208,6 +266,9 @@ public class ProductPriceDAO {
                     }
                 }catch(SQLException e){
                     prices = null;
+
+                    System.out.println("getPrices request handler failure.  "
+                            + e.getMessage());
                 }
             }
         };
@@ -217,7 +278,7 @@ public class ProductPriceDAO {
         return prices;
     }
 
-    public void setPrice(String productName, BigDecimal price, LocalDate fromDate, LocalDate toDate){
+    public Boolean setPrice(String productName, BigDecimal price, LocalDate fromDate, LocalDate toDate){
         String setNewPriceSql = 
             "insert into "+pricesTableName+"(product_id, price, validfrom, validto) values";
 
@@ -240,14 +301,27 @@ public class ProductPriceDAO {
         }
 
         setNewPriceSql+=
-            String.format( Locale.ROOT, "("+productIdByProductName+", %.2f, %s)", price, newPriceDateBordersSql);
+            String.format( Locale.ROOT, "(%s, %.2f, %s)", productIdByProductName, price, newPriceDateBordersSql);
 
-        stopSelling(productName, fromDate, toDate);
+        // stopSelling(productName, fromDate, toDate);
+        // makeRequest(setNewPriceSql);
 
-        makeRequest(setNewPriceSql);
+        Boolean res = false;
+
+        if( stopAutocommit() ){
+            res = stopSellingWhitoutTransaction(productName, fromDate, toDate);
+            if(res) res = makeRequest(setNewPriceSql);
+            if( res && !commitTransaction() ){
+                rollbackTransaction();
+                res = false;
+            }
+        }
+
+        return res;
+
     }
 
-    public void stopSelling(String productName, LocalDate fromDate, LocalDate toDate){
+    private Boolean stopSellingWhitoutTransaction(String productName, LocalDate fromDate, LocalDate toDate){
         _fromDate = fromDate;
         _toDate = toDate;
 
@@ -343,8 +417,8 @@ public class ProductPriceDAO {
                                 queryResult.moveToCurrentRow();
                             }
                         }
-                    }catch(SQLException e){
-                        e.printStackTrace();
+                    }catch( SQLException e ){
+                       System.out.println("StopSelling requestHandler failure.  " + e.getMessage());
                     }
                 }
             };
@@ -354,11 +428,26 @@ public class ProductPriceDAO {
         delPricesSql+=
             delPricesConstraintsSql;
 
-        makeRequest(delPricesSql);
-        if(queryResHandler != null){
-            makeRequest(fixOldPricesSql, queryResHandler);
+        Boolean res = false;
+        res = makeRequest(delPricesSql);
+        if(res && queryResHandler != null){
+            res = makeRequest(fixOldPricesSql, queryResHandler);
         }
 
+        return res;
+    }
+
+    public Boolean stopSelling(String productName, LocalDate fromDate, LocalDate toDate){
+        Boolean res = false;
+        if( stopAutocommit() ){
+            res = stopSellingWhitoutTransaction(productName, fromDate, toDate);
+            if( res && !commitTransaction() ){
+                rollbackTransaction();
+                res = false;
+            }
+        }
+
+        return res;
     }
 
     interface RequestResultHandler{
