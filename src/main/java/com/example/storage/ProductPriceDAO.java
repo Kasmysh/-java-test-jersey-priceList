@@ -123,32 +123,28 @@ public class ProductPriceDAO {
     }
 
     private Boolean startAutocommit(){
+        // System.out.println( "startAutocommit!!!" );
         return switchAutocommit(true);
     }
 
-    private Boolean commitTransaction(){
-        Boolean res = false;
-
-        try{
-            dbconn.commit();
-            res = true;
-        }catch(SQLException e){
-           System.out.println( "commitTransaction is fail.  " 
-                    + e.getMessage() );
-        }
-
-        return res;
+    private Boolean startTransaction(){
+        return stopAutocommit();
     }
 
-    private Boolean rollbackTransaction(){
+    private Boolean endTransaction(Boolean sucFlag){
         Boolean res = false;
 
         try{
-            dbconn.rollback();
+            if(sucFlag) dbconn.commit(); 
+            else dbconn.rollback();
+
+            // System.out.println( "commit!!!");
             res = true;
         }catch(SQLException e){
-           System.out.println( "rollbackTransaction is fail.  " 
+           System.out.println( "endTransaction is fail.  " 
                     + e.getMessage() );
+        }finally{
+            startAutocommit();
         }
 
         return res;
@@ -303,16 +299,17 @@ public class ProductPriceDAO {
         setNewPriceSql+=
             String.format( Locale.ROOT, "(%s, %.2f, %s)", productIdByProductName, price, newPriceDateBordersSql);
 
-        // stopSelling(productName, fromDate, toDate);
-        // makeRequest(setNewPriceSql);
-
         Boolean res = false;
 
         if( stopAutocommit() ){
             res = stopSellingWhitoutTransaction(productName, fromDate, toDate);
             if(res) res = makeRequest(setNewPriceSql);
-            if( res && !commitTransaction() ){
-                rollbackTransaction();
+            // if( res && !commitTransaction() ){
+            //     rollbackTransaction();
+            //     res = false;
+            // }
+            if( res && !endTransaction(true) ){
+                endTransaction(false);
                 res = false;
             }
         }
@@ -348,7 +345,6 @@ public class ProductPriceDAO {
                 delPricesConstraintsSql = "and m.validfrom >= '"+fromDate+"' ";
                 fixOldPricesConstraintsSql = "and (validto is null or validto >= '"+fromDate+"') ";
                 if(toDate != null){
-                // }else{
                     delPricesConstraintsSql+= "and m.validto <= '"+toDate+"'";
                     fixOldPricesConstraintsSql+= "and (validfrom is null or validfrom <= '"+toDate+"')";
                 }
@@ -441,8 +437,8 @@ public class ProductPriceDAO {
         Boolean res = false;
         if( stopAutocommit() ){
             res = stopSellingWhitoutTransaction(productName, fromDate, toDate);
-            if( res && !commitTransaction() ){
-                rollbackTransaction();
+            if( res && !endTransaction(true) ){
+                endTransaction(false);
                 res = false;
             }
         }
